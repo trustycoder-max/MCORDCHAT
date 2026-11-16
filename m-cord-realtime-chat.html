@@ -51,4 +51,87 @@
       </header>
       <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
       <form id="sendForm" class="p-4">
-        <input id="msgInput" type="text" maxlength="500" placeholder="Message #general" autocom
+        <input id="msgInput" type="text" maxlength="500" placeholder="Message #general" autocomplete="off"
+          class="w-full px-4 py-3 bg-[#383a40] rounded-lg outline-none">
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://rctywvvmoktgijzrdvxf.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_HAOnhxht4tFOrH5pH19mQw_OxsJngPm';
+
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const CHANNELS = ['general', 'random', 'games'];
+
+    let user = null;
+    let room = 'general';
+    let isRegister = false;
+    let sub = null;
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // Username must be 2-20 chars to match the database check
+    function displayName(u) {
+      const n = u?.user_metadata?.username || u?.email?.split('@')[0] || 'user';
+      return n.slice(0, 20).padEnd(2, '_');
+    }
+
+    function showAuthError(msg) {
+      $('authError').textContent = msg;
+      $('authError').classList.remove('hidden');
+    }
+
+    // Toggle between log in and register
+    $('authToggle').onclick = () => {
+      isRegister = !isRegister;
+      $('authSubmit').textContent = isRegister ? 'Register' : 'Log In';
+      $('authSubtitle').textContent = isRegister ? 'Create an account' : 'Log in to continue';
+      $('authToggleText').textContent = isRegister ? 'Already have an account?' : 'Need an account?';
+      $('authToggle').textContent = isRegister ? 'Log in' : 'Register';
+      $('authUsername').classList.toggle('hidden', !isRegister);
+      $('authUsername').required = isRegister;
+      $('authError').classList.add('hidden');
+    };
+
+    // Log in or register
+    $('authForm').onsubmit = async e => {
+      e.preventDefault();
+      const email = $('authEmail').value.trim();
+      const password = $('authPassword').value;
+      const username = $('authUsername').value.trim();
+      $('authError').classList.add('hidden');
+
+      let res;
+      if (isRegister) {
+        res = await sb.auth.signUp({ email, password, options: { data: { username } } });
+        if (!res.error && !res.data.session) {
+          showAuthError('Account created. Check your email to confirm, then log in.');
+          return;
+        }
+      } else {
+        res = await sb.auth.signInWithPassword({ email, password });
+      }
+      if (res.error) showAuthError(res.error.message);
+    };
+
+    $('logoutBtn').onclick = () => sb.auth.signOut();
+
+    sb.auth.onAuthStateChange((_event, session) => {
+      if (session) showApp(session.user);
+      else showAuth();
+    });
+
+    function showAuth() {
+      user = null;
+      if (sub) { sb.removeChannel(sub); sub = null; }
+      $('appScreen').classList.add('hidden');
+      $('authScreen').classList.remove('hidden');
+    }
+
+    function showApp(u) {
+      user = u;
+      $('meName').textContent = displayName(u);
+      $('authScreen').classList.
