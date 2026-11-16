@@ -60,10 +60,9 @@
   <script>
     const SUPABASE_URL = 'https://rctywvvmoktgijzrdvxf.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_HAOnhxht4tFOrH5pH19mQw_OxsJngPm';
-
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    const CHANNELS = ['general', 'random', 'games'];
 
+    const CHANNELS = ['general', 'random', 'games'];
     let user = null;
     let room = 'general';
     let isRegister = false;
@@ -73,10 +72,8 @@
     const esc = s => String(s).replace(/[&<>"']/g, c =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-    // Username must be 2-20 chars to match the database check
     function displayName(u) {
-      const n = u?.user_metadata?.username || u?.email?.split('@')[0] || 'user';
-      return n.slice(0, 20).padEnd(2, '_');
+      return u?.user_metadata?.username || u?.email?.split('@')[0] || 'user';
     }
 
     function showAuthError(msg) {
@@ -84,7 +81,7 @@
       $('authError').classList.remove('hidden');
     }
 
-    // Toggle between log in and register
+    // ---------- Auth ----------
     $('authToggle').onclick = () => {
       isRegister = !isRegister;
       $('authSubmit').textContent = isRegister ? 'Register' : 'Log In';
@@ -96,7 +93,6 @@
       $('authError').classList.add('hidden');
     };
 
-    // Log in or register
     $('authForm').onsubmit = async e => {
       e.preventDefault();
       const email = $('authEmail').value.trim();
@@ -134,4 +130,101 @@
     function showApp(u) {
       user = u;
       $('meName').textContent = displayName(u);
-      $('authScreen').classList.
+      $('authScreen').classList.add('hidden');
+      $('appScreen').classList.remove('hidden');
+      renderChannels();
+      switchRoom('general');
+    }
+
+    // ---------- Channels ----------
+    function renderChannels() {
+      $('channelList').innerHTML = '';
+      CHANNELS.forEach(name => {
+        const btn = document.createElement('button');
+        btn.textContent = '# ' + name;
+        btn.dataset.room = name;
+        btn.className = 'text-left px-2 py-1 rounded hover:bg-[#35373c]';
+        btn.onclick = () => switchRoom(name);
+        $('channelList').appendChild(btn);
+      });
+      highlightRoom();
+    }
+
+    function highlightRoom() {
+      document.querySelectorAll('#channelList button').forEach(b => {
+        b.classList.toggle('bg-[#404249]', b.dataset.room === room);
+        b.classList.toggle('text-white', b.dataset.room === room);
+      });
+    }
+
+    async function switchRoom(name) {
+      room = name;
+      $('channelTitle').textContent = name;
+      $('msgInput').placeholder = 'Message #' + name;
+      highlightRoom();
+      await loadMessages();
+      subscribeToRoom();
+    }
+
+    async function loadMessages() {
+      $('messages').innerHTML = '';
+      const { data, error } = await sb
+        .from('messages')
+        .select('*')
+        .eq('room', room)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (error) {
+        $('messages').innerHTML = `<p class="text-red-400 text-sm">${esc(error.message)}</p>`;
+        return;
+      }
+      data.forEach(addMessage);
+      scrollToBottom();
+    }
+
+    function subscribeToRoom() {
+      if (sub) sb.removeChannel(sub);
+      sub = sb.channel('room-' + room)
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `room=eq.${room}` },
+          payload => {
+            addMessage(payload.new);
+            scrollToBottom();
+          })
+        .subscribe();
+    }
+
+    function addMessage(m) {
+      const div = document.createElement('div');
+      div.innerHTML = `
+        <div>
+          <span class="font-semibold text-[#f2f3f5]">${esc(m.username)}</span>
+          <span class="text-xs text-[#949ba4] ml-2">${new Date(m.created_at).toLocaleTimeString()}</span>
+        </div>
+        <p class="text-[#dbdee1]">${esc(m.content)}</p>`;
+      $('messages').appendChild(div);
+    }
+
+    function scrollToBottom() {
+      const box = $('messages');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    $('sendForm').onsubmit = async e => {
+      e.preventDefault();
+      const content = $('msgInput').value.trim();
+      if (!content || !user) return;
+      $('msgInput').value = '';
+
+      const { error } = await sb.from('messages').insert({
+        room,
+        content,
+        username: displayName(user),
+        user_id: user.id
+      });
+      if (error) alert('Message not sent: ' + error.message);
+    };
+  </script>
+</body>
+</html>
+
